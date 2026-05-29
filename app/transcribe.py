@@ -111,16 +111,25 @@ class Pipeline:
                     "Unterstützt: mp3, wav, m4a, ogg, flac, mp4, webm."
                 ) from exc
 
+            import torch
+
             with _gpu_lock:
                 t0 = time.perf_counter()
                 try:
                     result = self._model.transcribe(audio, batch_size=self.cfg.batch_size, language=language)
+
+                    # WHY: VRAM zwischen den Stages freigeben — die GPU wird ggf. mit anderen
+                    # Prozessen geteilt; Peak-Speicher sonst = Summe aller Stage-Aktivierungen.
+                    if device == "cuda":
+                        torch.cuda.empty_cache()
 
                     align_model, align_meta = self._ensure_align(language, device)
                     result = whisperx.align(
                         result["segments"], align_model, align_meta, audio, device,
                         return_char_alignments=False,
                     )
+                    if device == "cuda":
+                        torch.cuda.empty_cache()
 
                     if self._diarize is not None:
                         diarize_segments = self._diarize(
@@ -132,8 +141,6 @@ class Pipeline:
                         result = whisperx.assign_word_speakers(diarize_segments, result)
                 except RuntimeError as exc:
                     if "out of memory" in str(exc).lower():
-                        import torch
-
                         torch.cuda.empty_cache()
                         raise TranscriptionError(
                             "GPU-Speicher erschöpft (CUDA OOM). Datei ist zu groß/lang für die RTX 3060 "

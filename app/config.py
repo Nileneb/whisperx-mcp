@@ -25,7 +25,7 @@ class Config:
         self.device = os.environ.get("DEVICE", "cuda")
         self.compute_type = os.environ.get("COMPUTE_TYPE", "float16" if self.device == "cuda" else "int8")
         self.default_language = os.environ.get("LANGUAGE", "de")
-        self.batch_size = int(os.environ.get("BATCH_SIZE", "16"))
+        self.batch_size = int(os.environ.get("BATCH_SIZE", "8"))
         self.enable_diarization = os.environ.get("ENABLE_DIARIZATION", "1") not in ("0", "false", "False")
         # WHY: pyannote.audio 4.x (von whisperx>=3.4 gezogen) lädt für die Diarization immer
         # Embedding-Artefakte aus speaker-diarization-community-1 — dieses Repo muss freigeschaltet sein.

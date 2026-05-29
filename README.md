@@ -78,7 +78,8 @@ curl -s -o /dev/null -w '%{http_code}\n' https://whisper.linn.games/mcp   # 401 
 ## Langdock-Anbindung
 
 1. In Langdock → Integrations → **Custom MCP Integration**.
-2. **Endpoint-URL**: `https://whisper.linn.games/mcp`
+2. **Endpoint-URL**: `https://whisper.linn.games/mcp/`  ← **mit Trailing-Slash** (vermeidet den
+   `/mcp`→`/mcp/`-Redirect durch die NAS)
 3. **Auth**: *API Key Authentication* — Header `Authorization`, Wert `Bearer <API_TOKEN>`.
 4. Transport: **Streamable HTTP**.
 5. Nach dem Verbinden erscheint das Tool **`transcribe-audio`**. Audio im Chat hochladen → lesbares Transkript.
