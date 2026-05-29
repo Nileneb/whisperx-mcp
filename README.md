@@ -9,7 +9,8 @@ für eine kleine Testgruppe auf dem eigenen PC (RTX 3060 12 GB).
 
 ## Voraussetzungen
 
-1. **GPU + Docker** mit `nvidia-container-toolkit`:
+1. **GPU + Docker** mit `nvidia-container-toolkit` (Docker ≥ 25 nutzt **CDI** — kein Daemon-Restart,
+   keine Störung paralleler Container):
    ```bash
    # einmalig auf dem Host:
    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
@@ -17,14 +18,18 @@ für eine kleine Testgruppe auf dem eigenen PC (RTX 3060 12 GB).
      sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
      sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
    sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-   sudo nvidia-ctk runtime configure --runtime=docker
-   sudo systemctl restart docker
+   # Der Installer erzeugt die CDI-Spec (/var/run/cdi/nvidia.yaml) automatisch.
+   # Falls nicht: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+   docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi   # Test
    ```
+   Compose nutzt `driver: cdi` / `nvidia.com/gpu=all` (siehe `docker-compose.yml`).
 2. **Router**: externes TCP **443 → dieser PC:443** forwarden. (Port 80 unangetastet — host-nginx belegt ihn.)
 3. **DNS**: A-Record `whisper.linn.games` → öffentliche Heim-IP (bei dynamischer IP: DynDNS-Updater).
-4. **Hugging Face**: Token erzeugen **und** Lizenzen akzeptieren:
-   - <https://huggingface.co/pyannote/speaker-diarization-3.1>
+4. **Hugging Face**: Token erzeugen **und** Lizenzen akzeptieren (Gated-Repos, Freigabe i. d. R. sofort):
+   - <https://huggingface.co/pyannote/speaker-diarization-community-1>  (Standardmodell, pyannote 4.x)
    - <https://huggingface.co/pyannote/segmentation-3.0>
+
+   Alternativ ein anderes Diarization-Modell via `DIARIZE_MODEL` in `.env` setzen.
 
 ## Setup
 

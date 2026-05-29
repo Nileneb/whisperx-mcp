@@ -1,9 +1,7 @@
 services:
   whisperx-mcp:
     build: .
-    runtime: nvidia
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
       - API_TOKEN=${API_TOKEN}
       - MODEL=${MODEL:-large-v3-turbo}
@@ -19,8 +17,11 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: 1
+            # WHY: CDI (Docker 29 nativ) statt runtime:nvidia — kein Daemon-Restart, stört
+            # die parallel laufenden Container (app.linn.games etc.) nicht.
+            - driver: cdi
+              device_ids:
+                - nvidia.com/gpu=all
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if __import__('json').load(urllib.request.urlopen('http://localhost:8000/health'))['model_loaded'] else 1)"]

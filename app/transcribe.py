@@ -59,7 +59,7 @@ class Pipeline:
                 raise TranscriptionError(
                     "ENABLE_DIARIZATION aktiv, aber HF_TOKEN fehlt — pyannote-Modelle benötigen ihn."
                 )
-            self._diarize = _load_diarize_pipeline(self.cfg.hf_token, device)
+            self._diarize = _load_diarize_pipeline(self.cfg.hf_token, device, self.cfg.diarize_model)
 
         self._loaded = True
 
@@ -146,13 +146,17 @@ class Pipeline:
         return _build_response(result, filename, language, duration, processing_time)
 
 
-def _load_diarize_pipeline(hf_token: str, device: str):
-    # WHY: Importpfad der DiarizationPipeline wechselte zwischen whisperx-Versionen.
+def _load_diarize_pipeline(hf_token: str, device: str, model_name: str):
+    # WHY: Import-Pfad UND Auth-Kwarg der DiarizationPipeline wechselten zwischen whisperx-Versionen
+    # (>=3.4: token=, <3.4: use_auth_token=).
     try:
         from whisperx.diarize import DiarizationPipeline
     except ImportError:
         from whisperx import DiarizationPipeline  # type: ignore
-    return DiarizationPipeline(use_auth_token=hf_token, device=device)
+    try:
+        return DiarizationPipeline(model_name=model_name, token=hf_token, device=device)
+    except TypeError:
+        return DiarizationPipeline(model_name=model_name, use_auth_token=hf_token, device=device)
 
 
 def _build_response(result: dict, filename: str, language: str, duration: float, processing_time: float) -> dict:

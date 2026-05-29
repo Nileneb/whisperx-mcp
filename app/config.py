@@ -27,6 +27,9 @@ class Config:
         self.default_language = os.environ.get("LANGUAGE", "de")
         self.batch_size = int(os.environ.get("BATCH_SIZE", "16"))
         self.enable_diarization = os.environ.get("ENABLE_DIARIZATION", "1") not in ("0", "false", "False")
+        # WHY: pyannote.audio 4.x (von whisperx>=3.4 gezogen) lädt für die Diarization immer
+        # Embedding-Artefakte aus speaker-diarization-community-1 — dieses Repo muss freigeschaltet sein.
+        self.diarize_model = os.environ.get("DIARIZE_MODEL", "pyannote/speaker-diarization-community-1")
         self.vocab_prompt = _read_vocab_prompt()
 
     def require_api_token(self) -> str:
