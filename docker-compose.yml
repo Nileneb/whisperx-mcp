@@ -1,0 +1,50 @@
+services:
+  whisperx-mcp:
+    build: .
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN}
+      - API_TOKEN=${API_TOKEN}
+      - MODEL=${MODEL:-large-v3-turbo}
+      - DEVICE=cuda
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-float16}
+      - LANGUAGE=${LANGUAGE:-de}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-1}
+    volumes:
+      - model-cache:/root/.cache
+    expose:
+      - "8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if __import__('json').load(urllib.request.urlopen('http://localhost:8000/health'))['model_loaded'] else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 600s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    # WHY: Nur 443 — Port 80 ist auf dem Host vom nginx belegt. Caddy holt das Cert via TLS-ALPN-01.
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      whisperx-mcp:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  model-cache:
+  caddy-data:
+  caddy-config:
