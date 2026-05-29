@@ -1,9 +1,0 @@
-whisper.linn.games {
-	reverse_proxy whisperx-mcp:8000 {
-		# Transkription langer Dateien dauert — großzügige Timeouts.
-		transport http {
-			read_timeout 30m
-			write_timeout 30m
-		}
-	}
-}

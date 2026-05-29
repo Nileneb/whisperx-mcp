@@ -23,7 +23,9 @@ für eine kleine Testgruppe auf dem eigenen PC (RTX 3060 12 GB).
    docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi   # Test
    ```
    Compose nutzt `driver: cdi` / `nvidia.com/gpu=all` (siehe `docker-compose.yml`).
-2. **Router**: externes TCP **443 → dieser PC:443** forwarden. (Port 80 unangetastet — host-nginx belegt ihn.)
+2. **Netzwerk**: Eine **Synology-NAS** ist der öffentliche TLS-Endpunkt (Reverse Proxy).
+   Router forwardet **443 → NAS** (und **80 → NAS** für den Let's-Encrypt-ACME-Check). Siehe
+   §"Synology Reverse Proxy" unten. Der WhisperX-Worker läuft per HTTP auf `<PC-LAN-IP>:8000`.
 3. **DNS**: A-Record `whisper.linn.games` → öffentliche Heim-IP (bei dynamischer IP: DynDNS-Updater).
 4. **Hugging Face**: Token erzeugen **und** Lizenzen akzeptieren (Gated-Repos, Freigabe i. d. R. sofort):
    - <https://huggingface.co/pyannote/speaker-diarization-community-1>  (Standardmodell, pyannote 4.x)
@@ -43,18 +45,34 @@ docker compose up -d --build
 docker compose logs -f whisperx-mcp     # wartet auf "Modelle geladen."
 ```
 
-Der erste Start lädt die Modelle herunter (mehrere GB → `model-cache`-Volume). `start_period` im
-Healthcheck ist auf 10 min gesetzt; Caddy startet erst, wenn der Worker `model_loaded: true` meldet.
+Der erste Start lädt die Modelle herunter (mehrere GB → `model-cache`-Volume). Der Worker beginnt
+erst nach `Modelle geladen.` auf Port 8000 zu lauschen (`/health` liefert dann `model_loaded: true`).
+
+## Synology Reverse Proxy
+
+Die NAS terminiert TLS und proxyt per HTTP auf den PC.
+
+1. **Zertifikat** (DSM → Systemsteuerung → Sicherheit → Zertifikat → Hinzufügen →
+   *Let's Encrypt*): Domainname `whisper.linn.games`. Voraussetzung: DNS zeigt auf die NAS und
+   **Port 80 ist auf die NAS geforwardet** (ACME HTTP-01).
+2. **Reverse-Proxy-Regel** (DSM → Systemsteuerung → Anmeldeportal → Erweitert → Reverse Proxy → Erstellen):
+   - Quelle: HTTPS · Hostname `whisper.linn.games` · Port `443`
+   - Ziel: HTTP · Hostname `192.168.178.11` (PC-LAN-IP) · Port `8000`
+   - Erweiterte Einstellungen → **Proxy-Timeout hochsetzen** (z. B. 1800 s) — sonst bricht die NAS
+     lange Transkriptionen ab.
+3. **Zertifikat zuordnen** (DSM → Sicherheit → Zertifikat → Einstellungen): dem Dienst
+   `whisper.linn.games` das neue Let's-Encrypt-Cert zuweisen.
 
 ## Test
 
 ```bash
-# lokal (Worker direkt, ohne TLS) — temporär Port mappen oder im compose-Netz:
-docker compose exec whisperx-mcp python -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://localhost:8000/health')))"
+# lokal auf dem PC (Worker direkt):
+curl -s http://192.168.178.11:8000/health          # {"status":"ok","model_loaded":true,...}
+curl -s -o /dev/null -w '%{http_code}\n' http://192.168.178.11:8000/mcp   # 401 (ohne Token)
 
-# extern über Caddy:
-curl -I https://whisper.linn.games/health          # 200, gültiges Cert
-curl https://whisper.linn.games/mcp                 # 401 ohne Token
+# extern über die NAS:
+curl -I https://whisper.linn.games/health          # 200, gültiges Cert (kein Hostname-Mismatch)
+curl -s -o /dev/null -w '%{http_code}\n' https://whisper.linn.games/mcp   # 401 ohne Token
 ```
 
 ## Langdock-Anbindung
