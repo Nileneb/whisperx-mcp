@@ -14,8 +14,8 @@ services:
       - IDLE_UNLOAD_SECONDS=${IDLE_UNLOAD_SECONDS:-300}
     volumes:
       - model-cache:/root/.cache
-    # WHY: Synology-NAS terminiert TLS und proxyt per HTTP auf diesen Host:8000.
-    # /mcp ist per Bearer-Token geschützt, /health nur Info — LAN-Exposure ist ok.
+    # /mcp/ ist per Bearer-Token geschützt, /health nur Info. Für externen Zugriff einen
+    # TLS-terminierenden Reverse-Proxy davorsetzen (siehe README §"Reverse-Proxy").
     ports:
       - "8000:8000"
     deploy:
@@ -23,7 +23,7 @@ services:
         reservations:
           devices:
             # WHY: CDI (Docker 29 nativ) statt runtime:nvidia — kein Daemon-Restart, stört
-            # die parallel laufenden Container (app.linn.games etc.) nicht.
+            # parallel laufende Container nicht.
             - driver: cdi
               device_ids:
                 - nvidia.com/gpu=all
@@ -38,8 +38,7 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-# TLS-Terminierung übernimmt die Synology-NAS (Reverse Proxy + Let's-Encrypt-Cert für
-# whisper.linn.games) → kein Caddy mehr nötig. Siehe README §"Synology Reverse Proxy".
+# Kein TLS im Container — für externen Zugriff einen Reverse-Proxy davorsetzen (README §"Reverse-Proxy").
 
 volumes:
   model-cache:

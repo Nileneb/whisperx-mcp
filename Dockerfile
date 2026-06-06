@@ -26,6 +26,6 @@ COPY app/ /srv/app/
 COPY vocab/ /srv/vocab/
 
 EXPOSE 8000
-# --proxy-headers: hinter der TLS-terminierenden Synology-NAS bleibt das Schema (https) im
+# --proxy-headers: hinter einem TLS-terminierenden Reverse-Proxy bleibt das Schema (https) im
 # /mcp -> /mcp/ Redirect erhalten (sonst Downgrade auf http -> MCP-Session bricht).
 CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

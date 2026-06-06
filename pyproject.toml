@@ -1,7 +1,7 @@
 [project]
 name = "whisperx-mcp"
 version = "0.1.0"
-description = "WhisperX-Transkriptionsservice als MCP-Tool für Langdock (Test-Deployment whisper.linn.games)"
+description = "Selbst gehosteter WhisperX-Transkriptionsservice als MCP-Tool (Streamable-HTTP)"
 requires-python = ">=3.10,<3.12"
 dependencies = [
     "mcp>=1.2.0",
