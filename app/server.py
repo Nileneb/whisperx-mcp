@@ -1,6 +1,7 @@
 """MCP-Server (low-level) für WhisperX, ausgeliefert über Streamable-HTTP mit Bearer-Token."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import json
@@ -155,9 +156,15 @@ async def health(_: Request) -> JSONResponse:
     pipeline = get_pipeline()
     return JSONResponse(
         {
-            "status": "ok" if pipeline.model_loaded else "loading",
-            "gpu": pipeline.gpu_name,
+            # Service erreichbar = healthy. Das Modell lädt on-demand (Energy-Saver),
+            # also NICHT an model_loaded hängen — sonst killt der Docker-Healthcheck den
+            # Container, sobald der Idle-Unload greift.
+            "status": "ok",
+            "ready": True,
             "model_loaded": pipeline.model_loaded,
+            "idle_unload_seconds": cfg.idle_unload_seconds,
+            "idle_seconds": round(pipeline.idle_seconds(), 1),
+            "gpu": pipeline.gpu_name,
             "model": cfg.model_name,
         }
     )
@@ -167,14 +174,42 @@ async def root(_: Request) -> PlainTextResponse:
     return PlainTextResponse("whisperx-mcp — MCP endpoint at /mcp")
 
 
+async def _idle_watcher(pipeline) -> None:
+    """Energy-Saver: gibt das WhisperX-Modell nach cfg.idle_unload_seconds ohne
+    Transkription aus dem GPU-VRAM frei. Der nächste Request lädt via
+    pipeline.ensure_loaded() neu (kein Container-Neustart, ~Sekunden Wake-Latenz)."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            if (pipeline.model_loaded and not pipeline.busy
+                    and pipeline.idle_seconds() >= cfg.idle_unload_seconds):
+                logger.info("Energy-Saver: %ds idle → WhisperX-Modell entladen, VRAM frei.",
+                            int(pipeline.idle_seconds()))
+                await anyio.to_thread.run_sync(pipeline.unload)
+        except Exception as exc:  # noqa: BLE001 — Watcher darf nie sterben
+            logger.warning("idle-watcher: %s", exc)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_: Starlette):
     cfg.require_api_token()
-    logger.info("Lade WhisperX-Modelle (%s, %s/%s)…", cfg.model_name, cfg.device, cfg.compute_type)
-    await anyio.to_thread.run_sync(get_pipeline().load)
-    logger.info("Modelle geladen. Diarization=%s", cfg.enable_diarization)
-    async with session_manager.run():
-        yield
+    pipeline = get_pipeline()
+    if cfg.idle_unload_seconds > 0:
+        logger.info("Energy-Saver aktiv: lazy-load + Unload nach %ds idle "
+                    "(0 VRAM bis zum ersten Request).", cfg.idle_unload_seconds)
+    else:
+        logger.info("Lade WhisperX-Modelle (%s, %s/%s, always-on)…",
+                    cfg.model_name, cfg.device, cfg.compute_type)
+        await anyio.to_thread.run_sync(pipeline.load)
+        logger.info("Modelle geladen. Diarization=%s", cfg.enable_diarization)
+    watcher = (asyncio.create_task(_idle_watcher(pipeline))
+               if cfg.idle_unload_seconds > 0 else None)
+    try:
+        async with session_manager.run():
+            yield
+    finally:
+        if watcher:
+            watcher.cancel()
 
 
 app = Starlette(

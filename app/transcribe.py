@@ -27,6 +27,8 @@ class Pipeline:
         self._diarize = None
         self._gpu_name = None
         self._loaded = False
+        self._last_used = 0.0   # time.monotonic() der letzten Transkription (Energy-Saver)
+        self._busy = False      # läuft gerade eine Transkription? (Watcher darf dann nicht entladen)
 
     # ---- lazy/warm model loading -------------------------------------------------
     def load(self) -> None:
@@ -62,6 +64,40 @@ class Pipeline:
             self._diarize = _load_diarize_pipeline(self.cfg.hf_token, device, self.cfg.diarize_model)
 
         self._loaded = True
+        self._last_used = time.monotonic()
+
+    def ensure_loaded(self) -> None:
+        """Lazy wake-up: lädt das Modell, falls es (durch den Energy-Saver) entladen
+        ist. Idempotent — der erste Request nach Idle trägt die Reload-Latenz."""
+        if not self._loaded:
+            self.load()
+
+    def unload(self) -> None:
+        """Energy-Saver: Modelle aus dem GPU-VRAM freigeben. Bleibt im Container —
+        der nächste Request lädt via ensure_loaded() neu (kein Container-Neustart)."""
+        if not self._loaded:
+            return
+        self._model = None
+        self._align_model = None
+        self._align_metadata = None
+        self._align_lang = None
+        self._diarize = None
+        self._loaded = False
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if self.cfg.device == "cuda":
+                torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001 — best effort VRAM-Freigabe
+            pass
+
+    @property
+    def busy(self) -> bool:
+        return self._busy
+
+    def idle_seconds(self) -> float:
+        return (time.monotonic() - self._last_used) if self._last_used else 0.0
 
     def _ensure_align(self, language: str, device: str):
         import whisperx
@@ -93,8 +129,9 @@ class Pipeline:
     ) -> dict:
         import whisperx
 
-        if not self._loaded:
-            raise TranscriptionError("Modelle sind noch nicht geladen.")
+        # Energy-Saver: lazy wake-up — lädt das Modell falls es nach Idle entladen wurde.
+        self.ensure_loaded()
+        self._last_used = time.monotonic()
 
         language = language or self.cfg.default_language
         device = self.cfg.device
@@ -114,6 +151,7 @@ class Pipeline:
             import torch
 
             with _gpu_lock:
+                self._busy = True   # Idle-Watcher darf während GPU-Arbeit nicht entladen
                 t0 = time.perf_counter()
                 try:
                     result = self._model.transcribe(audio, batch_size=self.cfg.batch_size, language=language)
@@ -147,6 +185,9 @@ class Pipeline:
                             "in einem Durchgang — kürzere Aufnahme verwenden."
                         ) from exc
                     raise
+                finally:
+                    self._busy = False
+                    self._last_used = time.monotonic()
                 processing_time = round(time.perf_counter() - t0, 1)
 
         duration = round(float(len(audio)) / 16000.0, 1)  # whisperx lädt mit 16 kHz

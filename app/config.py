@@ -31,6 +31,12 @@ class Config:
         # Embedding-Artefakte aus speaker-diarization-community-1 — dieses Repo muss freigeschaltet sein.
         self.diarize_model = os.environ.get("DIARIZE_MODEL", "pyannote/speaker-diarization-community-1")
         self.vocab_prompt = _read_vocab_prompt()
+        # Energy-Saver: Modell nach N s ohne Transkription aus dem GPU-VRAM entladen
+        # (lazy reload beim nächsten Request). 0 = aus (always-on). Default 300 = 5 min.
+        # WHY: der GPU-Host teilt 12 GB VRAM mit dem prod Memory-Stack (Ollama embed/
+        # generate) — ein dauerhaft residentes WhisperX-Modell (~2.9 GB) verursachte
+        # wiederholte embed-OOM-Outages. Idle-Unload gibt das VRAM frei wenn STT ungenutzt.
+        self.idle_unload_seconds = int(os.environ.get("IDLE_UNLOAD_SECONDS", "300"))
 
     def require_api_token(self) -> str:
         if not self.api_token:

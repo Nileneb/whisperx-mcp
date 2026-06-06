@@ -9,6 +9,9 @@ services:
       - COMPUTE_TYPE=${COMPUTE_TYPE:-float16}
       - LANGUAGE=${LANGUAGE:-de}
       - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-1}
+      # Energy-Saver: Modell nach N s idle aus dem GPU-VRAM entladen (0 = always-on).
+      # Teilt sich die 12-GB-GPU mit dem prod Memory-Stack → Default 5 min.
+      - IDLE_UNLOAD_SECONDS=${IDLE_UNLOAD_SECONDS:-300}
     volumes:
       - model-cache:/root/.cache
     # WHY: Synology-NAS terminiert TLS und proxyt per HTTP auf diesen Host:8000.
@@ -26,11 +29,13 @@ services:
                 - nvidia.com/gpu=all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if __import__('json').load(urllib.request.urlopen('http://localhost:8000/health'))['model_loaded'] else 1)"]
+      # Service-Erreichbarkeit (ready), NICHT model_loaded — sonst killt der Healthcheck
+      # den Container, sobald der Energy-Saver das Modell idle entlädt.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if __import__('json').load(urllib.request.urlopen('http://localhost:8000/health')).get('ready') else 1)"]
       interval: 30s
       timeout: 10s
-      retries: 20
-      start_period: 600s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
 # TLS-Terminierung übernimmt die Synology-NAS (Reverse Proxy + Let's-Encrypt-Cert für
